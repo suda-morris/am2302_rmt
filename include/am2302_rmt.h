@@ -76,7 +76,7 @@ esp_err_t am2302_read_temp_humi(am2302_handle_t sensor, float *temp, float *humi
  * @brief Read temperature and humidity from the sensor as an integer
  *
  * @param[in] sensor Sensor handle returned from `am2302_new_sensor`
- * @param[out] temp Temperature, in degree Celsius * 10, e.g. 231 means 23.1 degrees Celcius
+ * @param[out] temp Temperature, in degree Celsius * 10, e.g. 231 means 23.1 degrees Celsius
  * @param[out] humi Humidity in percentage * 10, e.g. 546 means a humidity of 54.6 percent
  * @return
  *      - ESP_OK: read temperature and humidity successfully

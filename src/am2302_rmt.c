@@ -150,7 +150,7 @@ static esp_err_t am2302_rmt_decode_data_int(rmt_symbol_word_t *rmt_symbols, size
 static esp_err_t am2302_rmt_decode_data(rmt_symbol_word_t *rmt_symbols, size_t symbol_num, float *temp, float *humi)
 {
     int16_t temp_int, humi_int;
-    esp_err_t ret = am2302_rmt_decode_data_int(rmt_symbols, symbol_num, temp_int, humi_int);
+    esp_err_t ret = am2302_rmt_decode_data_int(rmt_symbols, symbol_num, &temp_int, &humi_int);
     if (ret != ESP_OK) {
         return ret;
     }
