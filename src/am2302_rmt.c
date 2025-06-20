@@ -95,7 +95,7 @@ static bool am2302_rmt_rx_done_callback(rmt_channel_handle_t channel, const rmt_
     return task_woken;
 }
 
-static esp_err_t am2302_rmt_decode_data(rmt_symbol_word_t *rmt_symbols, size_t symbol_num, float *temp, float *humi)
+static esp_err_t am2302_rmt_decode_data_int(rmt_symbol_word_t *rmt_symbols, size_t symbol_num, int16_t *temp, int16_t *humi)
 {
     bool integrity_check_pass = (symbol_num >= AM2302_RMT_SYMBOLS_PER_TRANS) &&
                                 am2302_check_in_range(rmt_symbols[1].duration0, AM2302_RESPONSE_PULSE_LOW_US) &&
@@ -138,10 +138,24 @@ static esp_err_t am2302_rmt_decode_data(rmt_symbol_word_t *rmt_symbols, size_t s
     ESP_RETURN_ON_FALSE(integrity_check_pass, ESP_ERR_INVALID_CRC, TAG, "invalid checksum");
 
     // the highest bit of temp_int is the sign bit
-    *temp = (temp_int & 0x7FFF) / 10.0f;
+    *temp = (temp_int & 0x7FFF);
     if (temp_int & 0x8000) {
         *temp *= -1;
     }
+    *humi = humi_int;
+
+    return ESP_OK;
+}
+
+static esp_err_t am2302_rmt_decode_data(rmt_symbol_word_t *rmt_symbols, size_t symbol_num, float *temp, float *humi)
+{
+    int16_t temp_int, humi_int;
+    esp_err_t ret = am2302_rmt_decode_data_int(rmt_symbols, symbol_num, &temp_int, &humi_int);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    *temp = temp_int / 10.0f;
     *humi = humi_int / 10.0f;
 
     return ESP_OK;
@@ -267,6 +281,24 @@ esp_err_t am2302_read_temp_humi(am2302_handle_t sensor, float *temp, float *humi
     ESP_RETURN_ON_FALSE(xQueueReceive(sensor->receive_queue, &rmt_rx_evt_data, pdMS_TO_TICKS(1000)) == pdPASS, ESP_ERR_TIMEOUT,
                         TAG, "am2302 receive timeout");
     ESP_RETURN_ON_ERROR(am2302_rmt_decode_data(rmt_rx_evt_data.received_symbols, rmt_rx_evt_data.num_symbols, temp, humi),
+                        TAG, "am2302 decode data failed");
+
+    return ESP_OK;
+}
+
+esp_err_t am2302_read_temp_humi_int(am2302_handle_t sensor, int16_t *temp, int16_t *humi) {
+    ESP_RETURN_ON_FALSE(sensor && temp && humi, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
+
+    ESP_RETURN_ON_ERROR(rmt_receive(sensor->rx_channel, sensor->rx_symbols_buf, sensor->rx_symbols_buf_size,
+                                    &am2302_rmt_rx_config), TAG, "am2302 start receive failed");
+    ESP_RETURN_ON_ERROR(rmt_transmit(sensor->tx_channel, sensor->tx_copy_encoder, &am2302_start_pulse_symbol, sizeof(am2302_start_pulse_symbol),
+                                     &am2302_rmt_tx_config), TAG, "am2302 start transmit failed");
+
+    // wait the transmission finishes and decode data
+    rmt_rx_done_event_data_t rmt_rx_evt_data;
+    ESP_RETURN_ON_FALSE(xQueueReceive(sensor->receive_queue, &rmt_rx_evt_data, pdMS_TO_TICKS(1000)) == pdPASS, ESP_ERR_TIMEOUT,
+                        TAG, "am2302 receive timeout");
+    ESP_RETURN_ON_ERROR(am2302_rmt_decode_data_int(rmt_rx_evt_data.received_symbols, rmt_rx_evt_data.num_symbols, temp, humi),
                         TAG, "am2302 decode data failed");
 
     return ESP_OK;
