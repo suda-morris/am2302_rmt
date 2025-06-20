@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,7 +12,9 @@
 #include "esp_check.h"
 #include "driver/rmt_tx.h"
 #include "driver/rmt_rx.h"
+#include "driver/gpio.h"
 #include "am2302_rmt.h"
+#include "esp_idf_version.h"
 
 static const char *TAG = "am2302.rmt";
 
@@ -215,11 +217,20 @@ esp_err_t am2302_new_sensor_rmt(const am2302_config_t *am2302_config, const am23
         .gpio_num = am2302_config->gpio_num,
         .mem_block_symbols = AM2302_RMT_DEFAULT_MEM_BLOCK_SYMBOLS,
         .trans_queue_depth = AM2302_RMT_DEFAULT_TRANS_QUEUE_SIZE,
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
         .flags.io_loop_back = true, // make tx channel coexist with rx channel on the same gpio pin
         .flags.io_od_mode = true,   // enable open-drain mode for 1-wire bus
+#endif
     };
     ESP_GOTO_ON_ERROR(rmt_new_tx_channel(&tx_channel_cfg, &am2302->tx_channel),
                       err, TAG, "create rmt tx channel failed");
+
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+    // enable open-drain mode for 1-wire bus
+    gpio_od_enable(am2302_config->gpio_num);
+#endif
+    // enable internal pull-up resistor and disable pull-down resistor
+    gpio_set_pull_mode(am2302_config->gpio_num, GPIO_PULLUP_ONLY);
 
     // allocate rmt rx symbol buffer, one RMT symbol represents one bit
     am2302->rx_symbols_buf_size = AM2302_RMT_SYMBOLS_PER_TRANS * 2 * sizeof(rmt_symbol_word_t);
@@ -286,7 +297,8 @@ esp_err_t am2302_read_temp_humi(am2302_handle_t sensor, float *temp, float *humi
     return ESP_OK;
 }
 
-esp_err_t am2302_read_temp_humi_int(am2302_handle_t sensor, int16_t *temp, int16_t *humi) {
+esp_err_t am2302_read_temp_humi_int(am2302_handle_t sensor, int16_t *temp, int16_t *humi)
+{
     ESP_RETURN_ON_FALSE(sensor && temp && humi, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
 
     ESP_RETURN_ON_ERROR(rmt_receive(sensor->rx_channel, sensor->rx_symbols_buf, sensor->rx_symbols_buf_size,
